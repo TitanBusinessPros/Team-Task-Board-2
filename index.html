@@ -5,10 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enhanced Team Task Board | File Management</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Add LZ-String compression library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
     <style>
-        /* Your existing CSS remains exactly the same */
+        /* All your existing CSS remains the same */
         * {
             margin: 0;
             padding: 0;
@@ -515,6 +514,36 @@
             font-weight: 600;
         }
         
+        /* File upload status */
+        .upload-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .upload-status.uploading {
+            display: block;
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .upload-status.success {
+            display: block;
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .upload-status.error {
+            display: block;
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
         /* Responsive design */
         @media (max-width: 768px) {
             .board {
@@ -562,6 +591,7 @@
         
         <div class="main-content">
             <div class="board">
+                <!-- Your existing board columns remain exactly the same -->
                 <div class="column todo">
                     <div class="column-header">
                         <span>To Do</span>
@@ -986,6 +1016,8 @@
                 <div class="form-group">
                     <label for="task-file">Attach File</label>
                     <input type="file" id="task-file">
+                    <div class="upload-status" id="upload-status"></div>
+                    <small>Files are stored locally when external services fail</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1012,11 +1044,12 @@
             const fileViewer = document.querySelector('.file-viewer');
             const viewerContent = document.querySelector('.viewer-content');
             const closeViewerBtn = document.getElementById('close-viewer');
+            const uploadStatus = document.getElementById('upload-status');
             
-            // Store uploaded files (in a real app, this would be server-side)
+            // Store uploaded files info
             const uploadedFiles = new Map();
             
-            // NEW: Load board data from URL if available
+            // Load board data from URL if available
             loadBoardFromURL();
             
             // Initialize drag and drop
@@ -1029,7 +1062,6 @@
                     task.classList.remove('dragging');
                     updateTaskCounts();
                     updateTaskTimestamp(task);
-                    // NEW: Auto-save to URL when tasks are moved
                     saveBoardToURL();
                 });
             });
@@ -1060,9 +1092,9 @@
                 taskModal.style.display = 'flex';
             });
             
-            // NEW: Share Board Button
+            // Share Board Button
             shareBoardBtn.addEventListener('click', () => {
-                saveBoardToURL(true); // true = show alert and copy to clipboard
+                saveBoardToURL(true);
             });
             
             // Close modals
@@ -1085,8 +1117,140 @@
                 `;
             });
             
+            // NEW: Store file data locally as base64
+            async function storeFileLocally(file) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        resolve({
+                            name: file.name,
+                            data: e.target.result, // base64 data
+                            type: file.type,
+                            size: file.size,
+                            stored: 'local'
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            
+            // Upload file to File.io with improved error handling
+            async function uploadToFileIO(file) {
+                // Check file size first (100MB limit for free tier)
+                if (file.size > 100 * 1024 * 1024) {
+                    uploadStatus.textContent = 'File too large (max 100MB). Storing locally instead.';
+                    uploadStatus.className = 'upload-status error';
+                    return await storeFileLocally(file);
+                }
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    uploadStatus.textContent = `Uploading ${file.name} to File.io...`;
+                    uploadStatus.className = 'upload-status uploading';
+                    
+                    // Add timeout and better error handling
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                    
+                    const response = await fetch('https://file.io', {
+                        method: 'POST',
+                        body: formData,
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        uploadStatus.textContent = `✓ File uploaded successfully!`;
+                        uploadStatus.className = 'upload-status success';
+                        return {
+                            name: file.name,
+                            url: result.link,
+                            type: file.type,
+                            key: result.key,
+                            stored: 'file.io'
+                        };
+                    } else {
+                        throw new Error(result.message || 'Upload rejected by service');
+                    }
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        uploadStatus.textContent = 'File.io timed out. Storing file locally...';
+                    } else {
+                        uploadStatus.textContent = `File.io failed. Storing file locally...`;
+                    }
+                    uploadStatus.className = 'upload-status error';
+                    
+                    // Store locally as fallback
+                    return await storeFileLocally(file);
+                }
+            }
+            
+            // Upload file to transfer.sh (reliable backup service)
+            async function uploadToTransferSH(file) {
+                // Check file size (10GB limit but we'll stick with 100MB for consistency)
+                if (file.size > 100 * 1024 * 1024) {
+                    uploadStatus.textContent = 'File too large (max 100MB). Storing locally instead.';
+                    uploadStatus.className = 'upload-status error';
+                    return await storeFileLocally(file);
+                }
+                
+                try {
+                    uploadStatus.textContent = `Uploading ${file.name} to Transfer.sh...`;
+                    uploadStatus.className = 'upload-status uploading';
+                    
+                    const response = await fetch(`https://transfer.sh/${encodeURIComponent(file.name)}`, {
+                        method: 'PUT',
+                        body: file
+                    });
+                    
+                    if (response.ok) {
+                        const fileUrl = await response.text();
+                        uploadStatus.textContent = `✓ File uploaded successfully via Transfer.sh!`;
+                        uploadStatus.className = 'upload-status success';
+                        return {
+                            name: file.name,
+                            url: fileUrl.trim(),
+                            type: file.type,
+                            service: 'transfer.sh',
+                            stored: 'transfer.sh'
+                        };
+                    } else {
+                        throw new Error(`Transfer.sh error: ${response.status}`);
+                    }
+                } catch (error) {
+                    uploadStatus.textContent = `Transfer.sh failed. Storing file locally...`;
+                    uploadStatus.className = 'upload-status error';
+                    
+                    // Store locally as fallback
+                    return await storeFileLocally(file);
+                }
+            }
+            
+            // Smart file upload with multiple fallbacks
+            async function uploadFile(file) {
+                // First try File.io
+                let result = await uploadToFileIO(file);
+                
+                // If File.io stored locally, try Transfer.sh as well
+                if (result.stored === 'local') {
+                    uploadStatus.textContent = 'Trying Transfer.sh as alternative...';
+                    result = await uploadToTransferSH(file);
+                }
+                
+                return result;
+            }
+            
             // Save task
-            saveTaskBtn.addEventListener('click', () => {
+            saveTaskBtn.addEventListener('click', async () => {
                 const title = document.getElementById('task-title').value;
                 const description = document.getElementById('task-description').value;
                 const priority = document.getElementById('task-priority').value;
@@ -1095,9 +1259,15 @@
                 const fileInput = document.getElementById('task-file');
                 
                 if (title) {
-                    createTask(title, description, priority, assignee, dueDate, fileInput.files[0]);
+                    let fileInfo = null;
+                    
+                    // Upload file if one was selected
+                    if (fileInput.files[0]) {
+                        fileInfo = await uploadFile(fileInput.files[0]);
+                    }
+                    
+                    createTask(title, description, priority, assignee, dueDate, fileInfo);
                     taskModal.style.display = 'none';
-                    // NEW: Auto-save to URL when new tasks are created
                     saveBoardToURL();
                 } else {
                     alert('Please enter a task title');
@@ -1120,15 +1290,12 @@
                     const task = action.closest('.task');
                     
                     if (action.querySelector('.fa-trash')) {
-                        // Delete task
                         if (confirm('Are you sure you want to delete this task?')) {
                             task.remove();
                             updateTaskCounts();
-                            // NEW: Auto-save to URL when tasks are deleted
                             saveBoardToURL();
                         }
                     } else if (action.querySelector('.fa-edit')) {
-                        // Edit task
                         modalTitle.textContent = 'Edit Task';
                         const title = task.querySelector('.task-title').textContent;
                         const description = task.querySelector('.task-description').textContent;
@@ -1154,42 +1321,43 @@
                     const fileName = attachment.querySelector('span').textContent;
                     const taskId = attachment.closest('.task').dataset.taskId;
                     
+                    const fileInfo = uploadedFiles.get(`${taskId}-${fileName}`);
+                    if (!fileInfo) return;
+                    
                     if (action.querySelector('.fa-eye')) {
                         // View file
-                        const file = uploadedFiles.get(`${taskId}-${fileName}`);
-                        if (file) {
-                            if (file.type.includes('image')) {
-                                viewerContent.innerHTML = `
-                                    <img src="${URL.createObjectURL(file)}" alt="${fileName}" style="max-width: 100%; max-height: 100%;">
-                                    <p>${fileName}</p>
-                                `;
-                            } else if (file.type.includes('pdf')) {
-                                viewerContent.innerHTML = `
-                                    <iframe src="${URL.createObjectURL(file)}" width="100%" height="100%" style="min-height: 300px;"></iframe>
-                                    <p>${fileName}</p>
-                                `;
+                        if (fileInfo.stored === 'local' && fileInfo.data) {
+                            // For locally stored files, open in new tab
+                            const newWindow = window.open();
+                            if (fileInfo.type.includes('image')) {
+                                newWindow.document.write(`<img src="${fileInfo.data}" alt="${fileInfo.name}" style="max-width: 100%;">`);
+                            } else if (fileInfo.type.includes('pdf')) {
+                                newWindow.document.write(`<embed src="${fileInfo.data}" width="100%" height="100%">`);
                             } else {
-                                viewerContent.innerHTML = `
-                                    <i class="fas fa-file" style="font-size: 48px; color: #7f8c8d; margin-bottom: 15px;"></i>
-                                    <p>Preview not available for ${fileName}. <a href="${URL.createObjectURL(file)}" download="${fileName}">Download instead</a></p>
-                                `;
+                                newWindow.document.write(`<p>File: ${fileInfo.name}</p><p>Stored locally - download to view</p>`);
                             }
+                        } else if (fileInfo.url) {
+                            // For externally stored files
+                            window.open(fileInfo.url, '_blank');
                         }
                     } else if (action.querySelector('.fa-download')) {
                         // Download file
-                        const file = uploadedFiles.get(`${taskId}-${fileName}`);
-                        if (file) {
+                        if (fileInfo.stored === 'local' && fileInfo.data) {
+                            // For locally stored files, create download link
                             const a = document.createElement('a');
-                            a.href = URL.createObjectURL(file);
-                            a.download = fileName;
+                            a.href = fileInfo.data;
+                            a.download = fileInfo.name;
                             a.click();
+                        } else if (fileInfo.url) {
+                            // For externally stored files
+                            window.open(fileInfo.url, '_blank');
                         }
                     } else if (action.querySelector('.fa-share-alt')) {
                         // Share file link
-                        const file = uploadedFiles.get(`${taskId}-${fileName}`);
-                        if (file) {
-                            const link = URL.createObjectURL(file);
-                            prompt("Share this link to provide access to the file:", link);
+                        if (fileInfo.stored === 'local' && fileInfo.data) {
+                            prompt("This file is stored locally. Share the entire board URL to share this file:", window.location.href);
+                        } else if (fileInfo.url) {
+                            prompt("Share this file link:", fileInfo.url);
                         }
                     }
                 });
@@ -1233,7 +1401,7 @@
                 }
             }
             
-            // NEW: Collect all board data for saving
+            // Collect all board data for saving
             function collectBoardData() {
                 const boardData = {
                     tasks: [],
@@ -1242,7 +1410,7 @@
                 };
                 
                 document.querySelectorAll('.column').forEach(column => {
-                    const columnName = column.classList[1]; // todo, progress, review, done
+                    const columnName = column.classList[1];
                     
                     column.querySelectorAll('.task').forEach(task => {
                         const taskData = {
@@ -1256,8 +1424,8 @@
                             dueDate: task.querySelector('.task-due').textContent,
                             column: columnName,
                             meta: {
-                                started: task.querySelector('.task-meta div:first-child').textContent,
-                                lastUpdated: task.querySelector('.task-meta div:last-child').textContent
+                                started: task.querySelector('.task-meta div:first-child')?.textContent || '',
+                                lastUpdated: task.querySelector('.task-meta div:last-child')?.textContent || ''
                             }
                         };
                         
@@ -1266,12 +1434,11 @@
                         if (fileAttachments.length > 0) {
                             taskData.files = [];
                             fileAttachments.forEach(attachment => {
-                                taskData.files.push({
-                                    name: attachment.querySelector('span').textContent,
-                                    type: attachment.querySelector('i').className.includes('pdf') ? 'pdf' : 
-                                          attachment.querySelector('i').className.includes('word') ? 'word' :
-                                          attachment.querySelector('i').className.includes('excel') ? 'excel' : 'file'
-                                });
+                                const fileName = attachment.querySelector('span').textContent;
+                                const fileInfo = uploadedFiles.get(`${taskData.id}-${fileName}`);
+                                if (fileInfo) {
+                                    taskData.files.push(fileInfo);
+                                }
                             });
                         }
                         
@@ -1282,17 +1449,15 @@
                 return boardData;
             }
             
-            // NEW: Save board data to URL
+            // Save board data to URL
             function saveBoardToURL(showAlert = false) {
                 const boardData = collectBoardData();
                 const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(boardData));
                 
-                // Update URL without reloading page
                 const newURL = window.location.origin + window.location.pathname + '#' + compressed;
                 window.history.replaceState(null, null, newURL);
                 
                 if (showAlert) {
-                    // Copy to clipboard
                     navigator.clipboard.writeText(newURL).then(() => {
                         alert('Board URL copied to clipboard! Share this link with your team.');
                     }).catch(() => {
@@ -1301,7 +1466,7 @@
                 }
             }
             
-            // NEW: Load board data from URL
+            // Load board data from URL
             function loadBoardFromURL() {
                 if (window.location.hash) {
                     try {
@@ -1309,18 +1474,15 @@
                         const boardData = JSON.parse(LZString.decompressFromEncodedURIComponent(compressed));
                         
                         if (boardData && boardData.tasks) {
-                            // Clear existing tasks
                             document.querySelectorAll('.tasks').forEach(column => {
                                 column.innerHTML = '';
                             });
                             
-                            // Rebuild tasks from saved data
                             boardData.tasks.forEach(taskData => {
                                 recreateTask(taskData);
                             });
                             
                             updateTaskCounts();
-                            console.log('Board loaded from URL');
                         }
                     } catch (e) {
                         console.error('Error loading board from URL:', e);
@@ -1328,7 +1490,7 @@
                 }
             }
             
-            // NEW: Recreate a task from saved data
+            // Recreate a task from saved data
             function recreateTask(taskData) {
                 const column = document.querySelector(`.${taskData.column} .tasks`);
                 if (!column) return;
@@ -1361,21 +1523,27 @@
                     </div>
                 `;
                 
-                // Add file attachments if any
                 if (taskData.files && taskData.files.length > 0) {
                     const fileAttachments = document.createElement('div');
                     fileAttachments.className = 'file-attachments';
                     
-                    taskData.files.forEach(file => {
-                        const fileIcon = file.type === 'pdf' ? 'fa-file-pdf' : 
-                                       file.type === 'word' ? 'fa-file-word' : 
-                                       file.type === 'excel' ? 'fa-file-excel' : 'fa-file';
-                                       
+                    taskData.files.forEach(fileInfo => {
+                        uploadedFiles.set(`${taskData.id}-${fileInfo.name}`, fileInfo);
+                        
+                        let fileIcon = 'fa-file';
+                        if (fileInfo.type.includes('image')) fileIcon = 'fa-file-image';
+                        else if (fileInfo.type.includes('pdf')) fileIcon = 'fa-file-pdf';
+                        else if (fileInfo.type.includes('word')) fileIcon = 'fa-file-word';
+                        else if (fileInfo.type.includes('excel') || fileInfo.type.includes('sheet')) fileIcon = 'fa-file-excel';
+                        
+                        // Add local storage indicator
+                        const storageBadge = fileInfo.stored === 'local' ? ' <span style="color: #e74c3c; font-size: 10px;">(Local)</span>' : '';
+                        
                         fileAttachments.innerHTML += `
                             <div class="file-attachment">
                                 <div class="file-info">
                                     <i class="fas ${fileIcon}"></i>
-                                    <span>${file.name}</span>
+                                    <span>${fileInfo.name}${storageBadge}</span>
                                 </div>
                                 <div class="file-actions">
                                     <div class="file-action" title="View file"><i class="fas fa-eye"></i></div>
@@ -1389,7 +1557,6 @@
                     task.appendChild(fileAttachments);
                 }
                 
-                // Add event listeners to the recreated task
                 task.addEventListener('dragstart', () => {
                     task.classList.add('dragging');
                 });
@@ -1401,7 +1568,6 @@
                     saveBoardToURL();
                 });
                 
-                // Add action events
                 task.querySelectorAll('.task-action').forEach(action => {
                     action.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -1424,11 +1590,47 @@
                     });
                 });
                 
-                // Add file action events
                 task.querySelectorAll('.file-action').forEach(action => {
                     action.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        alert('Note: Actual file content cannot be restored from URL. In a real app, files would need to be hosted separately.');
+                        const attachment = action.closest('.file-attachment');
+                        const fileName = attachment.querySelector('span').textContent.replace(' (Local)', '');
+                        
+                        const fileInfo = uploadedFiles.get(`${taskData.id}-${fileName}`);
+                        if (!fileInfo) return;
+                        
+                        if (action.querySelector('.fa-eye')) {
+                            // View file
+                            if (fileInfo.stored === 'local' && fileInfo.data) {
+                                const newWindow = window.open();
+                                if (fileInfo.type.includes('image')) {
+                                    newWindow.document.write(`<img src="${fileInfo.data}" alt="${fileInfo.name}" style="max-width: 100%;">`);
+                                } else if (fileInfo.type.includes('pdf')) {
+                                    newWindow.document.write(`<embed src="${fileInfo.data}" width="100%" height="100%">`);
+                                } else {
+                                    newWindow.document.write(`<p>File: ${fileInfo.name}</p><p>Stored locally - download to view</p>`);
+                                }
+                            } else if (fileInfo.url) {
+                                window.open(fileInfo.url, '_blank');
+                            }
+                        } else if (action.querySelector('.fa-download')) {
+                            // Download file
+                            if (fileInfo.stored === 'local' && fileInfo.data) {
+                                const a = document.createElement('a');
+                                a.href = fileInfo.data;
+                                a.download = fileInfo.name;
+                                a.click();
+                            } else if (fileInfo.url) {
+                                window.open(fileInfo.url, '_blank');
+                            }
+                        } else if (action.querySelector('.fa-share-alt')) {
+                            // Share file link
+                            if (fileInfo.stored === 'local' && fileInfo.data) {
+                                prompt("This file is stored locally. Share the entire board URL to share this file:", window.location.href);
+                            } else if (fileInfo.url) {
+                                prompt("Share this file link:", fileInfo.url);
+                            }
+                        }
                     });
                 });
                 
@@ -1436,20 +1638,20 @@
             }
             
             // Create a new task
-            function createTask(title, description, priority, assignee, dueDate, file) {
+            function createTask(title, description, priority, assignee, dueDate, fileInfo) {
                 const todoColumn = document.querySelector('.todo .tasks');
                 const assigneeName = getAssigneeName(assignee);
-                const taskId = Date.now(); // Unique ID for the task
+                const taskId = Date.now();
                 
                 const newTask = document.createElement('div');
-                newTask.className = `task ${priority}-priority`;
-                newTask.setAttribute('draggable', 'true');
-                newTask.dataset.taskId = taskId;
+                task.className = `task ${priority}-priority`;
+                task.setAttribute('draggable', 'true');
+                task.dataset.taskId = taskId;
                 
                 const now = new Date();
                 const dateStr = now.toLocaleDateString();
                 
-                newTask.innerHTML = `
+                task.innerHTML = `
                     <div class="task-actions">
                         <div class="task-action" title="Edit task"><i class="fas fa-edit"></i></div>
                         <div class="task-action" title="Delete task"><i class="fas fa-trash"></i></div>
@@ -1472,17 +1674,26 @@
                     </div>
                 `;
                 
-                // Add file attachment if provided
-                if (file) {
-                    uploadedFiles.set(`${taskId}-${file.name}`, file);
+                if (fileInfo) {
+                    uploadedFiles.set(`${taskId}-${fileInfo.name}`, fileInfo);
                     
                     const fileAttachments = document.createElement('div');
                     fileAttachments.className = 'file-attachments';
+                    
+                    let fileIcon = 'fa-file';
+                    if (fileInfo.type.includes('image')) fileIcon = 'fa-file-image';
+                    else if (fileInfo.type.includes('pdf')) fileIcon = 'fa-file-pdf';
+                    else if (fileInfo.type.includes('word')) fileIcon = 'fa-file-word';
+                    else if (fileInfo.type.includes('excel') || fileInfo.type.includes('sheet')) fileIcon = 'fa-file-excel';
+                    
+                    // Add local storage indicator
+                    const storageBadge = fileInfo.stored === 'local' ? ' <span style="color: #e74c3c; font-size: 10px;">(Local)</span>' : '';
+                    
                     fileAttachments.innerHTML = `
                         <div class="file-attachment">
                             <div class="file-info">
-                                <i class="fas fa-file"></i>
-                                <span>${file.name}</span>
+                                <i class="fas ${fileIcon}"></i>
+                                <span>${fileInfo.name}${storageBadge}</span>
                             </div>
                             <div class="file-actions">
                                 <div class="file-action" title="View file"><i class="fas fa-eye"></i></div>
@@ -1492,72 +1703,70 @@
                         </div>
                     `;
                     
-                    // Add event listeners to file actions
                     fileAttachments.querySelectorAll('.file-action').forEach(action => {
                         action.addEventListener('click', (e) => {
                             e.stopPropagation();
                             
                             if (action.querySelector('.fa-eye')) {
                                 // View file
-                                if (file.type.includes('image')) {
-                                    viewerContent.innerHTML = `
-                                        <img src="${URL.createObjectURL(file)}" alt="${file.name}" style="max-width: 100%; max-height: 100%;">
-                                        <p>${file.name}</p>
-                                    `;
-                                } else if (file.type.includes('pdf')) {
-                                    viewerContent.innerHTML = `
-                                        <iframe src="${URL.createObjectURL(file)}" width="100%" height="100%" style="min-height: 300px;"></iframe>
-                                        <p>${file.name}</p>
-                                    `;
-                                } else {
-                                    viewerContent.innerHTML = `
-                                        <i class="fas fa-file" style="font-size: 48px; color: #7f8c8d; margin-bottom: 15px;"></i>
-                                        <p>Preview not available for ${file.name}. <a href="${URL.createObjectURL(file)}" download="${file.name}">Download instead</a></p>
-                                    `;
+                                if (fileInfo.stored === 'local' && fileInfo.data) {
+                                    const newWindow = window.open();
+                                    if (fileInfo.type.includes('image')) {
+                                        newWindow.document.write(`<img src="${fileInfo.data}" alt="${fileInfo.name}" style="max-width: 100%;">`);
+                                    } else if (fileInfo.type.includes('pdf')) {
+                                        newWindow.document.write(`<embed src="${fileInfo.data}" width="100%" height="100%">`);
+                                    } else {
+                                        newWindow.document.write(`<p>File: ${fileInfo.name}</p><p>Stored locally - download to view</p>`);
+                                    }
+                                } else if (fileInfo.url) {
+                                    window.open(fileInfo.url, '_blank');
                                 }
                             } else if (action.querySelector('.fa-download')) {
                                 // Download file
-                                const a = document.createElement('a');
-                                a.href = URL.createObjectURL(file);
-                                a.download = file.name;
-                                a.click();
+                                if (fileInfo.stored === 'local' && fileInfo.data) {
+                                    const a = document.createElement('a');
+                                    a.href = fileInfo.data;
+                                    a.download = fileInfo.name;
+                                    a.click();
+                                } else if (fileInfo.url) {
+                                    window.open(fileInfo.url, '_blank');
+                                }
                             } else if (action.querySelector('.fa-share-alt')) {
                                 // Share file link
-                                const link = URL.createObjectURL(file);
-                                prompt("Share this link to provide access to the file:", link);
+                                if (fileInfo.stored === 'local' && fileInfo.data) {
+                                    prompt("This file is stored locally. Share the entire board URL to share this file:", window.location.href);
+                                } else if (fileInfo.url) {
+                                    prompt("Share this file link:", fileInfo.url);
+                                }
                             }
                         });
                     });
                     
-                    newTask.appendChild(fileAttachments);
+                    task.appendChild(fileAttachments);
                 }
                 
-                // Add drag events to new task
-                newTask.addEventListener('dragstart', () => {
-                    newTask.classList.add('dragging');
+                task.addEventListener('dragstart', () => {
+                    task.classList.add('dragging');
                 });
                 
-                newTask.addEventListener('dragend', () => {
-                    newTask.classList.remove('dragging');
+                task.addEventListener('dragend', () => {
+                    task.classList.remove('dragging');
                     updateTaskCounts();
-                    updateTaskTimestamp(newTask);
+                    updateTaskTimestamp(task);
                     saveBoardToURL();
                 });
                 
-                // Add action events to new task
-                newTask.querySelectorAll('.task-action').forEach(action => {
+                task.querySelectorAll('.task-action').forEach(action => {
                     action.addEventListener('click', (e) => {
                         e.stopPropagation();
                         
                         if (action.querySelector('.fa-trash')) {
-                            // Delete task
                             if (confirm('Are you sure you want to delete this task?')) {
-                                newTask.remove();
+                                task.remove();
                                 updateTaskCounts();
                                 saveBoardToURL();
                             }
                         } else if (action.querySelector('.fa-edit')) {
-                            // Edit task
                             modalTitle.textContent = 'Edit Task';
                             document.getElementById('task-title').value = title;
                             document.getElementById('task-description').value = description;
@@ -1570,7 +1779,7 @@
                     });
                 });
                 
-                todoColumn.appendChild(newTask);
+                todoColumn.appendChild(task);
                 updateTaskCounts();
             }
             
@@ -1610,6 +1819,8 @@
                 document.getElementById('task-assignee').value = 'T1';
                 document.getElementById('task-due').value = '';
                 document.getElementById('task-file').value = '';
+                uploadStatus.textContent = '';
+                uploadStatus.className = 'upload-status';
             }
         });
     </script>

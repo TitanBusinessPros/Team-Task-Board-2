@@ -697,8 +697,27 @@
         return 'Something went wrong. Please try again.';
     }
 
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
         if (user) {
+            // Ensure this user's profile doc exists (covers accounts created
+            // before the allowlist rule was added, or if signup's setDoc failed).
+            try {
+                const profileRef = doc(db, 'users', user.uid);
+                const profileSnap = await getDoc(profileRef);
+                if (!profileSnap.exists()) {
+                    await setDoc(profileRef, {
+                        email: user.email,
+                        name: user.email.split('@')[0],
+                        joined: serverTimestamp()
+                    });
+                }
+            } catch (e) {
+                console.error('Could not create/verify user profile:', e);
+                loginError.textContent = 'Your email is not on the approved list. Contact the board owner.';
+                await signOut(auth);
+                return;
+            }
+
             currentUser = user;
             loginScreen.style.display = 'none';
             appScreen.style.display = 'block';

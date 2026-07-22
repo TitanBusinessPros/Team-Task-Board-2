@@ -702,9 +702,14 @@
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
-            // Ensure this user's profile doc exists (covers accounts created
-            // before the allowlist rule was added, or if signup's setDoc failed).
             try {
+                const allowedSnap = await getDoc(doc(db, 'allowed_emails', user.email));
+                if (!allowedSnap.exists()) {
+                    loginError.textContent = 'Your email is not on the approved list. Contact the board owner.';
+                    await signOut(auth);
+                    return;
+                }
+
                 const profileRef = doc(db, 'users', user.uid);
                 const profileSnap = await getDoc(profileRef);
                 if (!profileSnap.exists()) {
@@ -715,7 +720,7 @@
                     });
                 }
             } catch (e) {
-                console.error('Could not create/verify user profile:', e);
+                console.error('Login check failed:', e);
                 loginError.textContent = 'Your email is not on the approved list. Contact the board owner.';
                 await signOut(auth);
                 return;

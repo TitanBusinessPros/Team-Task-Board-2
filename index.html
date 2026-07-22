@@ -590,6 +590,11 @@
                 <label for="task-due">Due Date</label>
                 <input type="date" id="task-due">
             </div>
+            <div class="form-group">
+                <label for="task-file">Attach File (only the assignee can view it)</label>
+                <input type="file" id="task-file">
+                <div id="existing-file-note" style="font-size:13px; color:#7f8c8d; margin-top:6px;"></div>
+            </div>
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" id="cancel-task">Cancel</button>
@@ -609,6 +614,9 @@
         getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
         onSnapshot, setDoc, getDoc, serverTimestamp, query, orderBy
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import {
+        getStorage, ref, uploadBytes, getBlob
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyBfaASlL098ChURhwvjZqR48wa-h4TeG34",
@@ -622,15 +630,19 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const storage = getStorage(app);
 
     const tasksCol = collection(db, "tasks");
     const usersCol = collection(db, "users");
 
     let currentUser = null;
+    let isAdmin = false;
     let unsubscribeTasks = null;
     let unsubscribeUsers = null;
     let teamMembers = {}; // uid -> {name, email}
     let editingTaskId = null;
+    let editingTaskColumn = null;
+    let pendingFile = null;
 
     // ---------- DOM refs ----------
     const loginScreen = document.getElementById('login-screen');
@@ -719,9 +731,15 @@
             }
 
             currentUser = user;
+            try {
+                const adminSnap = await getDoc(doc(db, 'admins', user.email));
+                isAdmin = adminSnap.exists();
+            } catch (e) {
+                isAdmin = false;
+            }
             loginScreen.style.display = 'none';
             appScreen.style.display = 'block';
-            userBadge.textContent = `Signed in as ${user.email}`;
+            userBadge.textContent = `Signed in as ${user.email}${isAdmin ? ' (admin)' : ''}`;
             startListening();
         } else {
             currentUser = null;
@@ -809,10 +827,13 @@
         const initials = (assigneeData.name || '?').slice(0, 2).toUpperCase();
         const priorityLabel = (task.priority || 'medium');
 
+        const canViewFile = task.assignee === currentUser.uid || isAdmin;
+        const hasFile = task.filePath;
+
         el.innerHTML = `
             <div class="task-actions">
                 <div class="task-action" title="Edit task"><i class="fas fa-edit"></i></div>
-                <div class="task-action" title="Delete task"><i class="fas fa-trash"></i></div>
+                ${isAdmin ? '<div class="task-action" title="Delete task"><i class="fas fa-trash"></i></div>' : ''}
             </div>
             <div class="task-header">
                 <div class="task-title">${escapeHtml(task.title || '')}</div>
@@ -829,6 +850,12 @@
             <div class="task-meta">
                 <div>Last updated: ${task.lastUpdated || 'just now'}</div>
             </div>
+            ${hasFile ? `<div class="file-attachments" style="margin-top:10px;">
+                ${canViewFile
+                    ? `<button class="btn-secondary view-attachment" style="width:100%; justify-content:center; padding:8px;"><i class="fas fa-paperclip"></i> ${escapeHtml(task.fileName || 'Attachment')}</button>`
+                    : `<div style="font-size:12px; color:#b0b8bd;"><i class="fas fa-lock"></i> Attachment (assignee only)</div>`
+                }
+            </div>` : ''}
         `;
 
         el.addEventListener('dragstart', () => el.classList.add('dragging'));
@@ -848,13 +875,33 @@
                 e.stopPropagation();
                 if (action.querySelector('.fa-trash')) {
                     if (confirm('Delete this task?')) {
-                        await deleteDoc(doc(db, 'tasks', task.id));
+                        try {
+                            await deleteDoc(doc(db, 'tasks', task.id));
+                        } catch (err) {
+                            alert('You do not have permission to delete tasks.');
+                        }
                     }
                 } else if (action.querySelector('.fa-edit')) {
                     openTaskModal(task);
                 }
             });
         });
+
+        const viewBtn = el.querySelector('.view-attachment');
+        if (viewBtn) {
+            viewBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                try {
+                    const fileRef = ref(storage, task.filePath);
+                    const blob = await getBlob(fileRef);
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                } catch (err) {
+                    console.error(err);
+                    alert('Could not load file — you may not have permission to view it.');
+                }
+            });
+        }
 
         return el;
     }
@@ -924,15 +971,31 @@
             lastUpdated: new Date().toLocaleString()
         };
 
+        const fileInput = document.getElementById('task-file');
+        const file = fileInput.files[0];
+
         try {
-            if (editingTaskId) {
-                await updateDoc(doc(db, 'tasks', editingTaskId), payload);
+            let taskId = editingTaskId;
+            if (taskId) {
+                await updateDoc(doc(db, 'tasks', taskId), payload);
             } else {
                 payload.column = taskModal.dataset.column || 'todo';
                 payload.createdAt = serverTimestamp();
                 payload.createdBy = currentUser.uid;
-                await addDoc(tasksCol, payload);
+                const newDoc = await addDoc(tasksCol, payload);
+                taskId = newDoc.id;
             }
+
+            if (file) {
+                const filePath = `tasks/${taskId}/${Date.now()}_${file.name}`;
+                await uploadBytes(ref(storage, filePath), file);
+                await updateDoc(doc(db, 'tasks', taskId), {
+                    filePath,
+                    fileName: file.name
+                });
+            }
+
+            fileInput.value = '';
             taskModal.style.display = 'none';
         } catch (e) {
             console.error(e);

@@ -88,6 +88,10 @@
             min-height: 18px;
         }
 
+        #login-error.success { color: #27ae60; }
+
+        #forgot-password-link:hover { text-decoration: underline; }
+
         #app-screen { display: none; }
 
         header {
@@ -249,6 +253,70 @@
             border-left: 4px solid #3498db;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             position: relative;
+            overflow: hidden;
+        }
+
+        .attachments-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 8px 0;
+        }
+
+        .attachment-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #eef2f5;
+            color: #2c3e50;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            max-width: 100%;
+        }
+
+        .attachment-chip:hover { background: #dfe6e9; }
+
+        .attachment-chip span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 140px;
+        }
+
+        .attachment-chip .remove-attachment {
+            color: #e74c3c;
+            margin-left: 4px;
+            cursor: pointer;
+        }
+
+        .attachment-menu {
+            position: absolute;
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            padding: 6px;
+            z-index: 1100;
+        }
+
+        .attachment-menu button {
+            display: flex;
+            width: 100%;
+            background: none;
+            color: #2c3e50;
+            font-weight: 500;
+            font-size: 13px;
+            padding: 8px 12px;
+        }
+
+        .attachment-menu button:hover { background: #f0f2f5; }
+
+        .file-input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         .task:hover {
@@ -269,7 +337,7 @@
             padding-right: 55px;
         }
 
-        .task-title { font-weight: 600; font-size: 16px; }
+        .task-title { font-weight: 600; font-size: 16px; overflow-wrap: break-word; word-break: break-word; }
 
         .task-priority {
             font-size: 12px;
@@ -282,8 +350,48 @@
         .task-description {
             font-size: 14px;
             color: #7f8c8d;
-            margin-bottom: 15px;
+            margin-bottom: 6px;
             line-height: 1.4;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            white-space: pre-wrap;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .read-more-btn {
+            display: none;
+            background: none;
+            border: none;
+            padding: 0;
+            margin-bottom: 15px;
+            color: #3498db;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .read-more-btn:hover { text-decoration: underline; }
+
+        .view-description {
+            font-size: 15px;
+            color: #4a5a68;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            margin-bottom: 15px;
+        }
+
+        .view-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #7f8c8d;
         }
 
         .task-footer {
@@ -490,6 +598,9 @@
             <div id="login-error"></div>
             <input type="email" id="login-email" placeholder="Email" autocomplete="email">
             <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+            <div style="text-align:right; margin-top:-8px; margin-bottom:15px;">
+                <a href="#" id="forgot-password-link" style="font-size:13px; color:#3498db; text-decoration:none;">Forgot password?</a>
+            </div>
             <button class="login-btn-primary" id="login-btn">Log In</button>
             <button class="login-btn-secondary" id="signup-btn">Create Account</button>
         </div>
@@ -558,6 +669,30 @@
     </div>
 </div>
 
+<!-- View Task Modal (full text + attachments) -->
+<div class="modal" id="view-task-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="view-task-title">Task</h2>
+            <button class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="view-row">
+                <span id="view-task-priority"></span>
+                <span id="view-task-due"></span>
+            </div>
+            <div class="view-description" id="view-task-description"></div>
+            <div>
+                <label style="display:block; margin-bottom:8px; font-weight:500; color:#2c3e50;">Attachments</label>
+                <div class="attachments-list" id="view-task-attachments"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="close-view-task">Close</button>
+        </div>
+    </div>
+</div>
+
 <!-- Add/Edit Task Modal -->
 <div class="modal" id="task-modal">
     <div class="modal-content">
@@ -590,6 +725,14 @@
                 <label for="task-due">Due Date</label>
                 <input type="date" id="task-due">
             </div>
+            <div class="form-group">
+                <label for="task-attachment-input">Attachments</label>
+                <div class="file-input-row">
+                    <input type="file" id="task-attachment-input" multiple>
+                </div>
+                <div class="attachments-list" id="task-modal-attachments" style="margin-top:10px;"></div>
+                <div id="attachment-upload-status" style="font-size:13px; color:#7f8c8d; margin-top:6px;"></div>
+            </div>
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" id="cancel-task">Cancel</button>
@@ -603,12 +746,15 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
         getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-        onAuthStateChanged, signOut
+        onAuthStateChanged, signOut, sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import {
         getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-        onSnapshot, setDoc, getDoc, serverTimestamp, query, orderBy
+        onSnapshot, setDoc, getDoc, serverTimestamp, query, orderBy, arrayUnion
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import {
+        getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyBfaASlL098ChURhwvjZqR48wa-h4TeG34",
@@ -622,6 +768,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const storage = getStorage(app);
 
     const tasksCol = collection(db, "tasks");
     const usersCol = collection(db, "users");
@@ -633,7 +780,9 @@
     let teamMembers = {}; // uid -> {name, email}
     let editingTaskId = null;
     let editingTaskColumn = null;
-    let pendingFile = null;
+    let pendingFiles = [];
+    let existingAttachments = [];
+    let currentTasksById = {};
 
     // ---------- DOM refs ----------
     const loginScreen = document.getElementById('login-screen');
@@ -643,6 +792,7 @@
     const loginError = document.getElementById('login-error');
     const loginBtn = document.getElementById('login-btn');
     const signupBtn = document.getElementById('signup-btn');
+    const forgotPasswordLink = document.getElementById('forgot-password-link');
     const logoutBtn = document.getElementById('logout-btn');
     const userBadge = document.getElementById('user-badge');
     const syncStatus = document.getElementById('sync-status');
@@ -659,9 +809,21 @@
     const teamGrid = document.getElementById('team-grid');
     const assigneeSelect = document.getElementById('task-assignee');
 
+    const viewTaskModal = document.getElementById('view-task-modal');
+    const viewTaskTitle = document.getElementById('view-task-title');
+    const viewTaskDescription = document.getElementById('view-task-description');
+    const viewTaskPriority = document.getElementById('view-task-priority');
+    const viewTaskDue = document.getElementById('view-task-due');
+    const viewTaskAttachments = document.getElementById('view-task-attachments');
+    const closeViewTaskBtn = document.getElementById('close-view-task');
+
+    const attachmentInput = document.getElementById('task-attachment-input');
+    const taskModalAttachments = document.getElementById('task-modal-attachments');
+    const attachmentUploadStatus = document.getElementById('attachment-upload-status');
+
     // ---------- Auth actions ----------
     signupBtn.addEventListener('click', async () => {
-        loginError.textContent = '';
+        loginError.textContent = ''; loginError.classList.remove('success');
         const email = loginEmail.value.trim();
         const password = loginPassword.value;
         if (!email || !password) { loginError.textContent = 'Enter an email and password.'; return; }
@@ -678,7 +840,7 @@
     });
 
     loginBtn.addEventListener('click', async () => {
-        loginError.textContent = '';
+        loginError.textContent = ''; loginError.classList.remove('success');
         const email = loginEmail.value.trim();
         const password = loginPassword.value;
         if (!email || !password) { loginError.textContent = 'Enter an email and password.'; return; }
@@ -690,6 +852,27 @@
     });
 
     logoutBtn.addEventListener('click', () => signOut(auth));
+
+    forgotPasswordLink.addEventListener('click', async (e) => {
+        e.preventDefault();
+        setLoginMessage('', false);
+        const email = loginEmail.value.trim();
+        if (!email) {
+            setLoginMessage('Enter your email above first, then click "Forgot password?" again.', false);
+            return;
+        }
+        try {
+            await sendPasswordResetEmail(auth, email);
+            setLoginMessage(`Password reset email sent to ${email}. Check your inbox (and spam folder).`, true);
+        } catch (e) {
+            setLoginMessage(friendlyAuthError(e), false);
+        }
+    });
+
+    function setLoginMessage(text, isSuccess) {
+        loginError.textContent = text;
+        loginError.classList.toggle('success', isSuccess);
+    }
 
     function friendlyAuthError(e) {
         const code = e.code || '';
@@ -796,10 +979,13 @@
     // ---------- Rendering ----------
     function renderAllTasks(docs) {
         const columns = { todo: [], progress: [], review: [], done: [] };
+        currentTasksById = {};
         docs.forEach(d => {
             const data = d.data();
             const col = columns[data.column] ? data.column : 'todo';
-            columns[col].push({ id: d.id, ...data });
+            const task = { id: d.id, ...data };
+            columns[col].push(task);
+            currentTasksById[d.id] = task;
         });
 
         Object.keys(columns).forEach(colName => {
@@ -811,6 +997,15 @@
             columns[colName].forEach(task => container.appendChild(buildTaskCard(task)));
             const countEl = container.closest('.column').querySelector('.task-count');
             countEl.textContent = columns[colName].length;
+        });
+
+        // After the cards are in the DOM, check which descriptions are actually clipped
+        // and only show "Read more" for those.
+        document.querySelectorAll('.task-description').forEach(desc => {
+            const btn = desc.parentElement.querySelector('.read-more-btn');
+            if (btn && desc.scrollHeight > desc.clientHeight + 1) {
+                btn.style.display = 'inline-block';
+            }
         });
     }
 
@@ -824,7 +1019,10 @@
         const initials = (assigneeData.name || '?').slice(0, 2).toUpperCase();
         const priorityLabel = (task.priority || 'medium');
 
-        const canViewFile = task.assignee === currentUser.uid || isAdmin;
+        const attachments = task.attachments || [];
+        const attachmentsHtml = attachments.map((a, i) =>
+            `<div class="attachment-chip" data-task-id="${task.id}" data-att-index="${i}"><i class="fas fa-paperclip"></i><span>${escapeHtml(a.name)}</span></div>`
+        ).join('');
 
         el.innerHTML = `
             <div class="task-actions">
@@ -835,6 +1033,8 @@
                 <div class="task-priority">${priorityLabel.charAt(0).toUpperCase() + priorityLabel.slice(1)}</div>
             </div>
             <div class="task-description">${escapeHtml(task.description || '')}</div>
+            <button type="button" class="read-more-btn">Read more</button>
+            ${attachments.length ? `<div class="attachments-list">${attachmentsHtml}</div>` : ''}
             <div class="task-footer">
                 <div class="task-assignee">
                     <div class="avatar">${initials}</div>
@@ -846,6 +1046,19 @@
                 <div>Last updated: ${task.lastUpdated || 'just now'}</div>
             </div>
         `;
+
+        el.querySelector('.read-more-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openViewModal(task);
+        });
+
+        el.querySelectorAll('.attachment-chip').forEach(chip => {
+            chip.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const att = attachments[Number(chip.dataset.attIndex)];
+                showAttachmentMenu(chip, att);
+            });
+        });
 
         el.addEventListener('dragstart', () => el.classList.add('dragging'));
         el.addEventListener('dragend', async () => {
@@ -909,8 +1122,58 @@
         document.getElementById('task-assignee').value = task ? task.assignee : (currentUser ? currentUser.uid : '');
         document.getElementById('task-due').value = task && task.dueDate ? task.dueDate : '';
         taskModal.dataset.column = task ? task.column : 'todo';
+
+        pendingFiles = [];
+        existingAttachments = task && task.attachments ? [...task.attachments] : [];
+        attachmentInput.value = '';
+        attachmentUploadStatus.textContent = '';
+        renderModalAttachments();
+
         taskModal.style.display = 'flex';
     }
+
+    function renderModalAttachments() {
+        const existingHtml = existingAttachments.map((a, i) =>
+            `<div class="attachment-chip" data-kind="existing" data-index="${i}"><i class="fas fa-paperclip"></i><span>${escapeHtml(a.name)}</span><i class="fas fa-times remove-attachment"></i></div>`
+        ).join('');
+        const pendingHtml = pendingFiles.map((f, i) =>
+            `<div class="attachment-chip" data-kind="pending" data-index="${i}"><i class="fas fa-clock"></i><span>${escapeHtml(f.name)}</span><i class="fas fa-times remove-attachment"></i></div>`
+        ).join('');
+        taskModalAttachments.innerHTML = existingHtml + pendingHtml;
+
+        taskModalAttachments.querySelectorAll('.attachment-chip').forEach(chip => {
+            chip.querySelector('.remove-attachment').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const idx = Number(chip.dataset.index);
+                if (chip.dataset.kind === 'pending') {
+                    pendingFiles.splice(idx, 1);
+                } else {
+                    const removed = existingAttachments.splice(idx, 1)[0];
+                    if (editingTaskId && removed) {
+                        try {
+                            await deleteObject(storageRef(storage, removed.path));
+                            await updateDoc(doc(db, 'tasks', editingTaskId), { attachments: existingAttachments });
+                        } catch (err) {
+                            console.error('Could not remove attachment:', err);
+                        }
+                    }
+                }
+                renderModalAttachments();
+            });
+            chip.addEventListener('click', () => {
+                const idx = Number(chip.dataset.index);
+                if (chip.dataset.kind === 'existing') {
+                    showAttachmentMenu(chip, existingAttachments[idx]);
+                }
+            });
+        });
+    }
+
+    attachmentInput.addEventListener('change', () => {
+        pendingFiles.push(...Array.from(attachmentInput.files));
+        attachmentInput.value = '';
+        renderModalAttachments();
+    });
 
     addTaskBtn.addEventListener('click', () => openTaskModal(null));
     document.querySelectorAll('.add-task').forEach(btn => {
@@ -926,8 +1189,84 @@
     closeModalButtons.forEach(btn => btn.addEventListener('click', () => {
         teamModal.style.display = 'none';
         taskModal.style.display = 'none';
+        viewTaskModal.style.display = 'none';
     }));
     cancelTaskBtn.addEventListener('click', () => taskModal.style.display = 'none');
+    closeViewTaskBtn.addEventListener('click', () => viewTaskModal.style.display = 'none');
+
+    // ---------- View task modal (full text + attachments) ----------
+    function openViewModal(task) {
+        viewTaskTitle.textContent = task.title || '';
+        viewTaskDescription.textContent = task.description || '';
+        const priorityLabel = (task.priority || 'medium');
+        viewTaskPriority.textContent = `Priority: ${priorityLabel.charAt(0).toUpperCase() + priorityLabel.slice(1)}`;
+        viewTaskDue.textContent = task.dueDate ? `Due: ${formatDate(task.dueDate)}` : 'No due date';
+
+        const attachments = task.attachments || [];
+        viewTaskAttachments.innerHTML = attachments.length
+            ? attachments.map((a, i) => `<div class="attachment-chip" data-index="${i}"><i class="fas fa-paperclip"></i><span>${escapeHtml(a.name)}</span></div>`).join('')
+            : '<div class="empty-note">No attachments</div>';
+        viewTaskAttachments.querySelectorAll('.attachment-chip').forEach(chip => {
+            chip.addEventListener('click', () => showAttachmentMenu(chip, attachments[Number(chip.dataset.index)]));
+        });
+
+        viewTaskModal.style.display = 'flex';
+    }
+
+    // ---------- Attachment view/download menu ----------
+    let openAttachmentMenu = null;
+    document.addEventListener('click', () => {
+        if (openAttachmentMenu) { openAttachmentMenu.remove(); openAttachmentMenu = null; }
+    });
+
+    function showAttachmentMenu(anchorEl, attachment) {
+        if (openAttachmentMenu) { openAttachmentMenu.remove(); openAttachmentMenu = null; }
+        if (!attachment) return;
+
+        const menu = document.createElement('div');
+        menu.className = 'attachment-menu';
+        menu.innerHTML = `
+            <button type="button" data-action="view"><i class="fas fa-eye"></i>&nbsp;&nbsp;View</button>
+            <button type="button" data-action="download"><i class="fas fa-download"></i>&nbsp;&nbsp;Download</button>
+        `;
+        document.body.appendChild(menu);
+        const rect = anchorEl.getBoundingClientRect();
+        menu.style.top = `${window.scrollY + rect.bottom + 4}px`;
+        menu.style.left = `${window.scrollX + rect.left}px`;
+        openAttachmentMenu = menu;
+
+        menu.querySelector('[data-action="view"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(attachment.url, '_blank');
+            menu.remove();
+            openAttachmentMenu = null;
+        });
+
+        menu.querySelector('[data-action="download"]').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                const resp = await fetch(attachment.url);
+                const blob = await resp.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = attachment.name || 'file';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+            } catch (err) {
+                console.error(err);
+                // Fall back to opening the file directly if fetching the blob fails
+                // (e.g. Storage CORS isn't configured for this origin yet).
+                window.open(attachment.url, '_blank');
+            }
+            menu.remove();
+            openAttachmentMenu = null;
+        });
+
+        menu.addEventListener('click', (e) => e.stopPropagation());
+    }
 
     saveTaskBtn.addEventListener('click', async () => {
         const title = document.getElementById('task-title').value.trim();
@@ -942,15 +1281,42 @@
             lastUpdated: new Date().toLocaleString()
         };
 
+        saveTaskBtn.disabled = true;
+
         try {
-            payload.column = taskModal.dataset.column || 'todo';
-            payload.createdAt = serverTimestamp();
-            payload.createdBy = currentUser.uid;
-            await addDoc(tasksCol, payload);
+            let taskId = editingTaskId;
+
+            if (!taskId) {
+                payload.column = taskModal.dataset.column || 'todo';
+                payload.createdAt = serverTimestamp();
+                payload.createdBy = currentUser.uid;
+                payload.attachments = existingAttachments;
+                const newDoc = await addDoc(tasksCol, payload);
+                taskId = newDoc.id;
+            } else {
+                await updateDoc(doc(db, 'tasks', taskId), payload);
+            }
+
+            if (pendingFiles.length) {
+                attachmentUploadStatus.textContent = `Uploading ${pendingFiles.length} file(s)...`;
+                for (const file of pendingFiles) {
+                    const path = `attachments/${taskId}/${Date.now()}_${file.name}`;
+                    const fileRef = storageRef(storage, path);
+                    await uploadBytes(fileRef, file);
+                    const url = await getDownloadURL(fileRef);
+                    await updateDoc(doc(db, 'tasks', taskId), {
+                        attachments: arrayUnion({ name: file.name, path, url, size: file.size, contentType: file.type || '' })
+                    });
+                }
+            }
+
             taskModal.style.display = 'none';
         } catch (e) {
             console.error(e);
-            alert('Could not save task — check your connection.');
+            alert('Could not save task — check your connection and Firebase Storage rules.');
+        } finally {
+            saveTaskBtn.disabled = false;
+            attachmentUploadStatus.textContent = '';
         }
     });
 

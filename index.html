@@ -334,7 +334,7 @@
             display: flex;
             justify-content: space-between;
             margin-bottom: 10px;
-            padding-right: 55px;
+            padding-right: 75px;
         }
 
         .task-title { font-weight: 600; font-size: 16px; overflow-wrap: break-word; word-break: break-word; }
@@ -1026,7 +1026,8 @@
 
         el.innerHTML = `
             <div class="task-actions">
-                ${isAdmin ? '<div class="task-action" title="Delete task"><i class="fas fa-trash"></i></div>' : ''}
+                ${isAdmin ? '<div class="task-action" title="Edit task" data-action="edit"><i class="fas fa-pen"></i></div>' : ''}
+                ${isAdmin ? '<div class="task-action" title="Delete task" data-action="delete"><i class="fas fa-trash"></i></div>' : ''}
             </div>
             <div class="task-header">
                 <div class="task-title">${escapeHtml(task.title || '')}</div>
@@ -1075,7 +1076,9 @@
         el.querySelectorAll('.task-action').forEach(action => {
             action.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                if (action.querySelector('.fa-trash')) {
+                if (action.dataset.action === 'edit') {
+                    openTaskModal(task);
+                } else if (action.dataset.action === 'delete') {
                     if (confirm('Delete this task?')) {
                         try {
                             await deleteDoc(doc(db, 'tasks', task.id));
